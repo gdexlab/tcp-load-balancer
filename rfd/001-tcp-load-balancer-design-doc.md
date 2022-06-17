@@ -134,13 +134,71 @@ func (l *LoadBalancer) LeastConnections(clientID uuid.UUID) *upstream.TcpHost {
 Once the host is selected, data will be passed directly from clients to upstream hosts, without being stored on the load balancer.
 
 ### Health Checks
-The load balancer removes unhealthy upstreams if it is unable to connect to the host while handling a client connection. The health checks could include a grace period, or some request-forwarding backoff, allowing for n attempts before removal, but for simplicity, this project will immediately remove the host from available hosts upon a single failed connection.
+The load balancer removes unhealthy upstreams if it is unable to connect to the host while handling a client connection. The load balancer will store a registry of all hosts and with health status for each host. The health checks will allow N consecutive failed attempts before marking unhealthy. When an attempt fails to connect, the host will increase `consecutiveFailuresCount`, and the LB will select a different host for the connection. If a connection succeeds, the host's `consecutiveFailuresCount` will reset to 0. If N consecutive failed attempts are reached, the host will be marked unhealthy.
 
-The load balancer will store a registry of all hosts and with health status for each host. A separate go routing will periodically recheck unhealthy hosts so that statuses can be updated when health is restored. A host which allows connections will be considered healthy.
+A separate go routing will periodically recheck unhealthy hosts so that statuses can be updated when health is restored. A host which allows successful connection will be considered healthy.
 
 ## Demonstrating Functionality
 
-The current plan (subject to change with implementation) to demonstrate successful functionality of the project will be to initialize and connect a few hosts and a client as part of the main.go file for the load balancer. This should provide a quick way to test local development while iterating on a solution. Log statements will output actions for simple observability. The app will be run with `go run main.go`. In a future version, the service would either allow configuration for upstream hosts, or expose methods for registering new upstream hosts, but that will be out of scope for now.
+The current plan (subject to change with implementation) to demonstrate successful functionality of the project will be to initialize and connect a few static hosts and clients during startup of the load balancer. Here's an example of how static hosts may be registered at startup (and clients could be initialized in a similar way):
+```
+// registerStaticUpstreamHosts adds n static hosts to the load balancer for testing and demonstration purposes.
+func registerStaticUpstreamHosts(lb *server.LoadBalancer, n int) {
+	for i := 0; i < n; i++ {
+		u, err := upstream.New(dev.InitializeHelloHost(tcpNetwork, selectOpenPort).Addr().String())
+		if err != nil {
+			log.Fatal(err)
+		}
+		lb.AddHost(u)
+	}
+}
+```
+
+With `dev.InitializeHelloHost` defined as something like this:
+```
+// InitializeHelloHost is a temporary helper to simulate an upstream host that will print off any incoming data.
+func InitializeHelloHost(tcpNetwork, address string) net.Listener {
+	h, err := net.Listen(tcpNetwork, address)
+	if err != nil {
+		log.Fatalf("unable to listen on %s: %s", address, err)
+	}
+
+	go func() {
+		for {
+      // TODO: Set up some interval, or predictable/controllable behavior where a host will not accept connection so that we can test the health checking process.
+			conn, err := h.Accept()
+			if err != nil {
+				log.Printf("host was unable to accept incoming connection: %s", err)
+				continue
+			}
+
+			printDataFromConnection(conn)
+			conn.Close()
+		}
+	}()
+	return h
+}
+```
+
+Static client registration may be done with a simple connection setup step like the following: 
+```
+// InitializeHelloClient is a temporary helper to simulate a client that will pass data to the input address every second.
+func InitializeHelloClient(address string) {
+	for {
+		time.Sleep(time.Second * 1)
+
+    conn, err := tls.Dial(tcpNetwork, address, getClientTLSConfig())
+    if err != nil {
+        log.Print("unable connection from client to ", address, ": ", err)
+    }
+		
+		conn.Write([]byte("hello"))
+		conn.Write([]byte("\n"))
+	}
+}
+```
+ 
+This will provide a quick way to test local development while iterating on a solution. Log statements will output actions for simple observability. The app will be run with `go run main.go`. In a future version, the service would either allow configuration for upstream hosts, or expose methods for registering new upstream hosts, but that will be out of scope for now. Any clients will be allowed to connect, as long as they pass the TLS verification process. A future version could place client registration behind a process which requires additional authorization.
 
 A random available port will be selected to start up the service unless a port is passed with `-p` as a flag. Manual testing/access could be done via tcp utilities like telnet if desired, e.g. `telnet localhost [PORTNUMBER]`
 
