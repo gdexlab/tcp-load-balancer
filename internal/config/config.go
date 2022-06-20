@@ -11,6 +11,8 @@ const (
 	SelectOpenPort = ":0"
 	// tcpNetwork could eventually be one of "tcp", "tcp4", "tcp6", but this project currently only supports "tcp".
 	TCPNetwork = "tcp"
+	// HostFailureThreshold controls the number of failures allowed before a host is marked unhealthy.
+	HostFailureThreshold = 3
 
 	// TODO: The following constants are purely for controlling static host/client setup and could be removed in a future version of this app.
 	// ------ Start Static Host/Client Config ------

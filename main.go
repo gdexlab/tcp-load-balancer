@@ -18,7 +18,7 @@ func main() {
 	log.Printf("Load balancer listening on %s", lb.Address())
 
 	// Manually configure upstream hosts and downstream clients to demonstrate functionality.
-	if err = static.Setup(lb, config.NumberOfHosts, config.NumberOfClients, config.ClientMessageInterval); err != nil {
+	if err = static.Setup(lb, config.NumberOfHosts, config.HostFailureThreshold, config.NumberOfClients, config.ClientMessageInterval); err != nil {
 		log.Fatalf("unable to setup static connection simulators: %s", err)
 	}
 

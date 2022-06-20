@@ -2,17 +2,23 @@ package server
 
 import (
 	"net"
-	"tcp-load-balancer/internal/upstream"
 	"testing"
 	"time"
+
+	"tcp-load-balancer/internal/upstream"
+
+	"github.com/google/uuid"
 )
 
-func TestLoadBalancer_handleConnection(t *testing.T) {
+// maxWaitTime is used to control how long we wait for a connection count change to occur.
+const maxWaitTime = time.Second * 5
+
+func TestLoadBalancer_handleConnectionV1(t *testing.T) {
 	t.Run("connection count is incremented and decremented during connection", func(t *testing.T) {
 
 		host := &upstream.TcpHost{}
 		l := &LoadBalancer{
-			hosts: []*upstream.TcpHost{host},
+			healthyHosts: map[uuid.UUID]*upstream.TcpHost{host.ID(): host},
 		}
 
 		// Set up channels to watch for the connection counts to change.
@@ -20,7 +26,7 @@ func TestLoadBalancer_handleConnection(t *testing.T) {
 		decremented := make(chan bool)
 
 		// Start watching the connection count, and allow some time to observe the expected change.
-		expectConnectionChange(host, time.Second*5, 1, incremented)
+		observeConnectionChange(host, maxWaitTime, 1, incremented)
 
 		if err := l.handleConnection(&net.TCPConn{}); err != nil {
 			t.Errorf("LoadBalancer.handleConnection() error = %v", err)
@@ -30,7 +36,7 @@ func TestLoadBalancer_handleConnection(t *testing.T) {
 			t.Error("The host never had its connection count incremented.")
 		} else {
 			// else the incremented channel returned true, so the connection count has been incremented at this point, it should be decremented soon.
-			expectConnectionChange(host, time.Second*5, -1, decremented)
+			observeConnectionChange(host, maxWaitTime, -1, decremented)
 			if !<-decremented {
 				t.Error("The host never had its connection count decremented.")
 			}
@@ -38,9 +44,9 @@ func TestLoadBalancer_handleConnection(t *testing.T) {
 	})
 }
 
-// expectConnectionChange is a helper function that watches the connection count of a host and returns true when expected difference is observed.
+// observeConnectionChange is a helper function that watches the connection count of a host and returns true when expected difference is observed.
 // results are written to the input channel.
-func expectConnectionChange(host *upstream.TcpHost, timeout time.Duration, expectedDifference int, c chan bool) {
+func observeConnectionChange(host *upstream.TcpHost, timeout time.Duration, expectedDifference int, c chan bool) {
 	startingTime := time.Now()
 	startingCount := host.ConnectionCount()
 	go func() {
@@ -53,4 +59,55 @@ func expectConnectionChange(host *upstream.TcpHost, timeout time.Duration, expec
 			}
 		}
 	}()
+}
+
+func TestLoadBalancer_handleConnection(t *testing.T) {
+
+	healthyHost := createHostWithNConnections(t, 2)
+	unhealthyHost := &upstream.TcpHost{}
+
+	type fields struct {
+		healthyHosts map[uuid.UUID]*upstream.TcpHost
+	}
+	type args struct {
+		clientConn net.Conn
+	}
+	tests := []struct {
+		name                 string
+		fields               fields
+		args                 args
+		wantErr              bool
+		expectedHealthyHosts int
+	}{
+		{
+			name: "unhealthy hosts are marked as unhealthy, and the connection is forwarded to the next healthy host",
+			fields: fields{
+				// The first host is healthy, and has two active connections, the second is secretly unhealthy and has 0 connections, so it will be selected first.
+				healthyHosts: map[uuid.UUID]*upstream.TcpHost{healthyHost.ID(): healthyHost, unhealthyHost.ID(): unhealthyHost},
+			},
+			args: args{
+				clientConn: &net.TCPConn{},
+			},
+			expectedHealthyHosts: 1,
+			wantErr:              false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := &LoadBalancer{
+				healthyHosts: tt.fields.healthyHosts,
+			}
+			if err := l.handleConnection(tt.args.clientConn); (err != nil) != tt.wantErr {
+				t.Errorf("LoadBalancer.handleConnection() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			l.healthyHostsLock.Lock()
+			if len(l.healthyHosts) > tt.expectedHealthyHosts {
+				t.Errorf("LoadBalancer.handleConnection() expected %d healthy hosts, got %d", tt.expectedHealthyHosts, len(l.healthyHosts))
+			}
+			l.healthyHostsLock.Unlock()
+			// TODO: this will pass if I let it sleep, since the host is removed in a goroutine. Consider a simpler solution though before reworking this test.
+			// I still think the filtering technique may be cleaner than using the healthyHosts map.
+		})
+	}
 }

@@ -53,17 +53,36 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 
 	// Copy data to the selected host, and decrement the connection count when the copy finishes.
 	go func() {
+
 		if err = forwardToHost(clientConn, host); err != nil {
-			// TODO: Select a different host if this host is down, and communicate the error over a channel rather than just logging it here (next PR).
+			// TODO: clean up this nested stuff
+			if err == upstream.ErrUnhealthy {
+
+				// If the host is unhealthy, remove it so that leastConnections doesn't select this host again until it's healthy.
+				l.MarkHostUnhealthy(host.ID())
+
+				// TODO: Decrement the existing connection count here.
+				if err = host.DecrementActiveConnections(); err != nil {
+					log.Print(err)
+				}
+
+				// Start over to select a new host.
+				err = l.handleConnection(clientConn)
+				if err != nil {
+					log.Printf("error when ra-attempting failed host: %s", err)
+				}
+			}
+			// TODO: error handling is not ideal here.
+			log.Print(err)
+			return
+		}
+
+		if err = host.DecrementActiveConnections(); err != nil {
 			log.Print(err)
 		}
 
 		// TODO: Support response data from hosts back to clients (outside scope of this project).
 
-		// Decrement the connection count for the selected host.
-		if err = host.DecrementActiveConnections(); err != nil {
-			log.Print(err)
-		}
 	}()
 
 	return nil
