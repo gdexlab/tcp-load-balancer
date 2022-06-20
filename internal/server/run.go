@@ -20,15 +20,21 @@ func (l *LoadBalancer) Run() error {
 		// TODO: Set up mTLS in next PR. For now, connect without TLS.
 		clientConn, err := l.listener.Accept()
 		if err != nil {
-			go respondAndClose(clientConn, err.Error())
-			continue
+			log.Printf("Load balancer unexpectedly declined connection and will be shut down: %s", err)
+			// TODO: attempt to re-establish the listener with a retry mechanism (leaving out of scope for this project).
+			break
 		}
 
 		if err := l.handleConnection(clientConn); err != nil {
 			log.Printf("Unable to handle connection: %s", err)
-			go respondAndClose(clientConn, err.Error())
+		}
+
+		if err := clientConn.Close(); err != nil {
+			log.Printf("Unable to close client connection: %s", err)
 		}
 	}
+
+	return nil
 }
 
 // handleConnection selects an upstream host, tracks connection counts, and forwards data upstream.
@@ -57,7 +63,6 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 		// Decrement the connection count for the selected host.
 		if err = host.DecrementActiveConnections(); err != nil {
 			log.Print(err)
-			respondAndClose(clientConn, err.Error())
 		}
 	}()
 
@@ -79,15 +84,4 @@ func forwardToHost(clientConn net.Conn, host *upstream.TcpHost) error {
 	}
 
 	return nil
-}
-
-// respondAndClose writes a message back to the client and closes the connection.
-func respondAndClose(conn net.Conn, message string) {
-	if _, err := conn.Write([]byte(message + "\n")); err != nil {
-		log.Printf("unable to write to connection: %s", err)
-	}
-
-	if err := conn.Close(); err != nil {
-		log.Printf("unable to close connection: %s", err)
-	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -26,6 +27,9 @@ type TcpHost struct {
 
 	// ID is the unique identifier of this host.
 	ID uuid.UUID
+
+	// connectionLock enables concurrent safety for reading and writing to the activeConnections field.
+	connectionLock sync.Mutex
 }
 
 // IncrementActiveConnections increments the active connection count for this host.
@@ -34,7 +38,9 @@ func (h *TcpHost) IncrementActiveConnections() error {
 		return ErrUninitialized
 	}
 
+	h.connectionLock.Lock()
 	h.activeConnections++
+	h.connectionLock.Unlock()
 	return nil
 }
 
@@ -44,7 +50,9 @@ func (h *TcpHost) DecrementActiveConnections() error {
 		return ErrUninitialized
 	}
 
+	h.connectionLock.Lock()
 	h.activeConnections--
+	h.connectionLock.Unlock()
 	return nil
 }
 
@@ -62,6 +70,8 @@ func (h *TcpHost) ConnectionCount() int {
 		return 0
 	}
 
+	h.connectionLock.Lock()
+	defer h.connectionLock.Unlock()
 	return h.activeConnections
 }
 
