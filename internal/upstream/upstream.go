@@ -28,8 +28,11 @@ type TcpHost struct {
 	// ID is the unique identifier of this host.
 	ID uuid.UUID
 
-	// connectionLock enables concurrent safety for reading and writing to the activeConnections field.
-	connectionLock sync.Mutex
+	// activeConnectionsLock enables concurrent safety for reading and writing to the activeConnections field.
+	activeConnectionsLock sync.Mutex
+
+	// health tra
+	health Health
 }
 
 // IncrementActiveConnections increments the active connection count for this host.
@@ -85,7 +88,27 @@ func (h *TcpHost) Dial() (net.Conn, error) {
 		return nil, ErrNoAddress
 	}
 
-	return net.Dial(h.network, h.Address().String())
+	conn, err := net.Dial(h.network, h.Address().String())
+	if err != nil {
+		h.healthLock.Lock()
+		h.health = StatusUnhealthy
+		// TODO: increment a counter for the number of times this host has failed
+		h.healthLock.Unlock()
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+// Healthy returns true if the health status of the host equals StatusHealthy.
+func (h *TcpHost) Healthy() bool {
+	if h == nil {
+		return false
+	}
+
+	h.healthLock.Lock()
+	defer h.healthLock.Unlock()
+	return h.health == StatusHealthy
 }
 
 // New initializes a new TcpUpstreamHost.
