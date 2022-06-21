@@ -2,7 +2,7 @@
 
 A basic TCP load balancer with least connection forwarding. 
 
-Currently only implements requirement 1 and 6 from the following requirements pulled from the [gravitational career challenge](https://github.com/gravitational/careers/blob/rjones/challenge-2.md/challenges/systems/challenge-2.md). Additional requirements will be added soon.
+Currently implements requirements 1, 3 and 6 from the following requirements pulled from the [gravitational career challenge](https://github.com/gravitational/careers/blob/rjones/challenge-2.md/challenges/systems/challenge-2.md). Additional requirements will be added soon.
 1. **Implement a least connections request forwarder that tracks the number of connections per upstream.**
 2. Implement a per-client connection rate limiter that tracks the number of client connections.
 3. Implement a health checking request forwarder that removes unhealthy upstreams.
