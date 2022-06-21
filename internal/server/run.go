@@ -55,7 +55,7 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 
 				// If the host is unhealthy, remove it so that leastConnections doesn't select this host again until it's healthy.
 				l.TrackUnhealthyHost(host.ID())
-				
+
 				// Start over to select a new host.
 				err = l.handleConnection(clientConn)
 				if err != nil {

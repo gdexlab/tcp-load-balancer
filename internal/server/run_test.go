@@ -64,6 +64,8 @@ func observeConnectionChange(host *upstream.TcpHost, timeout time.Duration, expe
 	}()
 }
 
+// TODO sort out these tests.
+
 // func TestLoadBalancer_handleConnection_Health(t *testing.T) {
 
 // 	healthyHost := createHostWithNConnections(t, 2)
