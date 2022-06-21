@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"net"
 
+	"tcp-load-balancer/internal/upstream/connections"
+
 	"github.com/google/uuid"
 )
 
 var (
-	ErrUninitialized = errors.New("host uninitialized")
-	ErrNoAddress     = errors.New("no upstream host address available")
+	ErrNoAddress = errors.New("no upstream host address available")
 )
 
 // TcpHost represents the upstream hosts to which the LB connects and forwards data.
 type TcpHost struct {
+	// id is the unique identifier of this host.
+	id uuid.UUID
+
 	// address is the remote address of this upstream host.
 	address *net.TCPAddr
 
@@ -22,55 +26,31 @@ type TcpHost struct {
 	network string
 
 	// activeConnections tracks the number of open connections to the host.
-	activeConnections int
-
-	// ID is the unique identifier of this host.
-	ID uuid.UUID
+	activeConnections connections.Counter
 }
 
 // IncrementActiveConnections increments the active connection count for this host.
-func (h *TcpHost) IncrementActiveConnections() error {
-	if h == nil {
-		return ErrUninitialized
-	}
-
-	h.activeConnections++
-	return nil
+func (h *TcpHost) IncrementActiveConnections() {
+	h.activeConnections.Increment()
 }
 
 // DecrementActiveConnections decrements the active connection count for this host.
-func (h *TcpHost) DecrementActiveConnections() error {
-	if h == nil {
-		return ErrUninitialized
-	}
-
-	h.activeConnections--
-	return nil
+func (h *TcpHost) DecrementActiveConnections() {
+	h.activeConnections.Decrement()
 }
 
 // Address returns the address of the host.
 func (h *TcpHost) Address() *net.TCPAddr {
-	if h == nil {
-		return nil
-	}
 	return h.address
 }
 
 // ConnectionCount returns the number of active connections to this host.
 func (h *TcpHost) ConnectionCount() int {
-	if h == nil {
-		return 0
-	}
-
-	return h.activeConnections
+	return h.activeConnections.Count()
 }
 
 // Dial returns a net connection to the tcp host.
 func (h *TcpHost) Dial() (net.Conn, error) {
-	if h == nil {
-		return nil, ErrUninitialized
-	}
-
 	if h.Address() == nil {
 		return nil, ErrNoAddress
 	}

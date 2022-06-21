@@ -1,13 +1,14 @@
 package server
 
 import (
+	"io"
 	"net"
 	"tcp-load-balancer/internal/upstream"
 	"testing"
 	"time"
 )
 
-func TestLoadBalancer_handleConnection(t *testing.T) {
+func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 	t.Run("connection count is incremented and decremented during connection", func(t *testing.T) {
 
 		host := &upstream.TcpHost{}
@@ -53,4 +54,50 @@ func expectConnectionChange(host *upstream.TcpHost, timeout time.Duration, expec
 			}
 		}
 	}()
+}
+
+func TestLoadBalancer_handleConnection_Resources(t *testing.T) {
+
+	tests := []struct {
+		name       string
+		clientConn net.Conn
+		hosts      []*upstream.TcpHost
+		wantErr    bool
+	}{
+		{
+			name:    "connection is closed when LeastConnections returns an error",
+			wantErr: true,
+		},
+		{
+			name:    "connection is closed after forwarding to host",
+			hosts:   []*upstream.TcpHost{{}},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := &LoadBalancer{
+				hosts: tt.hosts,
+			}
+			if err := l.handleConnection(tt.clientConn); (err != nil) != tt.wantErr {
+				t.Errorf("LoadBalancer.handleConnection() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !connectionIsClosed(tt.clientConn) {
+				t.Error("The connection was not properly closed.")
+			}
+		})
+	}
+}
+
+// connectionIsClosed is a helper function that checks if a connection has been properly closed.
+func connectionIsClosed(conn net.Conn) bool {
+	if conn == nil {
+		return true
+	}
+
+	conn.SetReadDeadline(time.Now())
+	data := make([]byte, 1)
+	_, err := conn.Read(data)
+
+	return err == io.EOF
 }
