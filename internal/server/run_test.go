@@ -43,14 +43,16 @@ func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 // results are written to the input channel.
 func expectConnectionChange(host *upstream.TcpHost, timeout time.Duration, expectedDifference int, c chan bool) {
 	startingTime := time.Now()
-	startingCount := host.ConnectionCount()
+	startingCount := int(host.ConnectionCount())
 	go func() {
 		for {
-			if host.ConnectionCount() == startingCount+expectedDifference {
+			if int(host.ConnectionCount()) == startingCount+expectedDifference {
 				c <- true
+				return
 			}
 			if time.Since(startingTime) > timeout {
 				c <- false
+				return
 			}
 		}
 	}()
@@ -95,7 +97,6 @@ func connectionIsClosed(conn net.Conn) bool {
 		return true
 	}
 
-	conn.SetReadDeadline(time.Now())
 	data := make([]byte, 1)
 	_, err := conn.Read(data)
 

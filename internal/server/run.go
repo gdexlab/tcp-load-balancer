@@ -20,17 +20,14 @@ func (l *LoadBalancer) Run() error {
 		// TODO: Set up mTLS in next PR. For now, connect without TLS.
 		clientConn, err := l.listener.Accept()
 		if err != nil {
-			log.Printf("Load balancer unexpectedly declined connection and will be shut down: %s", err)
 			// TODO: attempt to re-establish the listener with a retry mechanism (leaving out of scope for this project).
-			break
+			return err
 		}
 
 		if err := l.handleConnection(clientConn); err != nil {
 			log.Printf("Unable to handle connection: %s", err)
 		}
 	}
-
-	return nil
 }
 
 // handleConnection selects an upstream host, tracks connection counts, and forwards data upstream.

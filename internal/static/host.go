@@ -23,6 +23,7 @@ func InitializeHost(tcpNetwork, address string) net.Listener {
 			conn, err := h.Accept()
 			if err != nil {
 				log.Printf("host was unable to accept incoming connection: %s", err)
+				// Intentionally allowing the hosts to continue to accept connections for now. This behavior will be refined in the next PR when we set up static hosts to fail occasionally.
 				continue
 			}
 

@@ -4,8 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-
-	"tcp-load-balancer/internal/upstream/connections"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
@@ -26,17 +25,17 @@ type TcpHost struct {
 	network string
 
 	// activeConnections tracks the number of open connections to the host.
-	activeConnections connections.Counter
+	activeConnections uint64
 }
 
 // IncrementActiveConnections increments the active connection count for this host.
 func (h *TcpHost) IncrementActiveConnections() {
-	h.activeConnections.Increment()
+	atomic.AddUint64(&h.activeConnections, uint64(1))
 }
 
 // DecrementActiveConnections decrements the active connection count for this host.
 func (h *TcpHost) DecrementActiveConnections() {
-	h.activeConnections.Decrement()
+	atomic.AddUint64(&h.activeConnections, ^uint64(0))
 }
 
 // Address returns the address of the host.
@@ -45,8 +44,8 @@ func (h *TcpHost) Address() *net.TCPAddr {
 }
 
 // ConnectionCount returns the number of active connections to this host.
-func (h *TcpHost) ConnectionCount() int {
-	return h.activeConnections.Count()
+func (h *TcpHost) ConnectionCount() uint64 {
+	return h.activeConnections
 }
 
 // Dial returns a net connection to the tcp host.
