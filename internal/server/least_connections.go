@@ -6,17 +6,18 @@ import (
 	"tcp-load-balancer/internal/upstream"
 )
 
+var ErrNoHosts = errors.New("no healthy upstream hosts available")
+
 // LeastConnections returns an authorized host with the fewest open connections.
 func (l *LoadBalancer) LeastConnections() (*upstream.TcpHost, error) {
 	if l == nil || len(l.hosts) == 0 {
-		return nil, errors.New("no upstream hosts available")
+		return nil, ErrNoHosts
 	}
 
 	l.unhealthyHostsLock.Lock()
 	defer l.unhealthyHostsLock.Unlock()
 
 	var host *upstream.TcpHost
-
 	for _, h := range l.hosts {
 		// TODO: handle authorization scheme here in next PR. For now, we'll just assume the client can access all hosts.
 
@@ -32,5 +33,10 @@ func (l *LoadBalancer) LeastConnections() (*upstream.TcpHost, error) {
 		}
 
 	}
+
+	if host == nil {
+		return nil, ErrNoHosts
+	}
+
 	return host, nil
 }

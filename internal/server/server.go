@@ -43,8 +43,8 @@ func (l *LoadBalancer) AddUpstream(host *upstream.TcpHost) error {
 	return nil
 }
 
-// MarkHostUnhealthy adds the host to the unhealthy hosts map.
-func (l *LoadBalancer) MarkHostUnhealthy(hostID uuid.UUID) {
+// TrackUnhealthyHost adds the host to the unhealthy hosts map.
+func (l *LoadBalancer) TrackUnhealthyHost(hostID uuid.UUID) {
 	if l == nil {
 		log.Print("unable to mark host unhealthy: load balancer is nil")
 	}

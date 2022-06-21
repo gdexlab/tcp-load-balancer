@@ -28,10 +28,6 @@ func (l *LoadBalancer) Run() error {
 		if err := l.handleConnection(clientConn); err != nil {
 			log.Printf("Unable to handle connection: %s", err)
 		}
-
-		if err := clientConn.Close(); err != nil {
-			log.Printf("Unable to close client connection: %s", err)
-		}
 	}
 
 	return nil
@@ -43,13 +39,12 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 	// This adds a small amount of latency to the request, but ensures accurate load balancing.
 	host, err := l.LeastConnections()
 	if err != nil {
+		closeConnection(clientConn)
 		return err
 	}
 
 	// Increment the connection count for the selected host.
-	if err = host.IncrementActiveConnections(); err != nil {
-		return err
-	}
+	host.IncrementActiveConnections()
 
 	// Copy data to the selected host, and decrement the connection count when the copy finishes.
 	go func() {
@@ -59,7 +54,7 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 			if err == upstream.ErrUnhealthy {
 
 				// If the host is unhealthy, remove it so that leastConnections doesn't select this host again until it's healthy.
-				l.MarkHostUnhealthy(host.ID())
+				l.TrackUnhealthyHost(host.ID())
 
 				// Start over to select a new host.
 				err = l.handleConnection(clientConn)
@@ -68,19 +63,17 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 				}
 			}
 
-			if err = host.DecrementActiveConnections(); err != nil {
-				log.Print(err)
-			}
+			host.DecrementActiveConnections()
 
 			return
 		}
 
-		if err = host.DecrementActiveConnections(); err != nil {
-			log.Print(err)
-		}
+		closeConnection(clientConn)
 
 		// TODO: Support response data from hosts back to clients (outside scope of this project).
 
+		// Decrement the connection count for the selected host.
+		host.DecrementActiveConnections()
 	}()
 
 	return nil
@@ -101,4 +94,14 @@ func forwardToHost(clientConn net.Conn, host *upstream.TcpHost) error {
 	}
 
 	return nil
+}
+
+// closeConnection closes the connection and logs the error, if any.
+func closeConnection(conn net.Conn) {
+	if conn == nil {
+		return
+	}
+	if err := conn.Close(); err != nil {
+		log.Printf("Unable to close client connection: %s", err)
+	}
 }

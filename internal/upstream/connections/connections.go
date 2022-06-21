@@ -2,7 +2,7 @@ package connections
 
 import "sync"
 
-// Counter tracks the number of active connections to the host.
+// Counter tracks the number of active connections to the host in a concurrency=safe manner.
 type Counter struct {
 	count int
 	sync.Mutex

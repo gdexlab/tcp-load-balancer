@@ -14,7 +14,6 @@ import (
 
 var (
 	ErrUninitialized = errors.New("host uninitialized")
-	ErrNoAddress     = errors.New("no upstream host address available")
 	ErrUnhealthy     = errors.New("host is unhealthy")
 )
 
@@ -37,23 +36,13 @@ type TcpHost struct {
 }
 
 // IncrementActiveConnections increments the active connection count for this host.
-func (h *TcpHost) IncrementActiveConnections() error {
-	if h == nil {
-		return ErrUninitialized
-	}
-
+func (h *TcpHost) IncrementActiveConnections() {
 	h.activeConnections.Increment()
-	return nil
 }
 
 // DecrementActiveConnections decrements the active connection count for this host.
-func (h *TcpHost) DecrementActiveConnections() error {
-	if h == nil {
-		return ErrUninitialized
-	}
-
-	h.activeConnections.Increment()
-	return nil
+func (h *TcpHost) DecrementActiveConnections() {
+	h.activeConnections.Decrement()
 }
 
 // ID returns the id of the host.
@@ -66,18 +55,11 @@ func (h *TcpHost) ID() uuid.UUID {
 
 // Address returns the address of the host.
 func (h *TcpHost) Address() *net.TCPAddr {
-	if h == nil {
-		return nil
-	}
 	return h.address
 }
 
 // ConnectionCount returns the number of active connections to this host.
 func (h *TcpHost) ConnectionCount() int {
-	if h == nil {
-		return 0
-	}
-
 	return h.activeConnections.Count()
 }
 
