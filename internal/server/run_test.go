@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"tcp-load-balancer/internal/upstream"
-
-	"github.com/google/uuid"
 )
 
 // maxWaitTime is used to control how long we wait for a connection count change to occur.
@@ -18,7 +16,7 @@ func TestLoadBalancer_handleConnectionV1(t *testing.T) {
 
 		host := &upstream.TcpHost{}
 		l := &LoadBalancer{
-			healthyHosts: map[uuid.UUID]*upstream.TcpHost{host.ID(): host},
+			hosts: []*upstream.TcpHost{host},
 		}
 
 		// Set up channels to watch for the connection counts to change.
@@ -67,47 +65,68 @@ func TestLoadBalancer_handleConnection(t *testing.T) {
 	unhealthyHost := &upstream.TcpHost{}
 
 	type fields struct {
-		healthyHosts map[uuid.UUID]*upstream.TcpHost
+		hosts []*upstream.TcpHost
 	}
 	type args struct {
 		clientConn net.Conn
 	}
 	tests := []struct {
-		name                 string
-		fields               fields
-		args                 args
-		wantErr              bool
-		expectedHealthyHosts int
+		name                   string
+		fields                 fields
+		args                   args
+		wantErr                bool
+		expectedUnhealthyHosts int
 	}{
 		{
 			name: "unhealthy hosts are marked as unhealthy, and the connection is forwarded to the next healthy host",
 			fields: fields{
 				// The first host is healthy, and has two active connections, the second is secretly unhealthy and has 0 connections, so it will be selected first.
-				healthyHosts: map[uuid.UUID]*upstream.TcpHost{healthyHost.ID(): healthyHost, unhealthyHost.ID(): unhealthyHost},
+				hosts: []*upstream.TcpHost{healthyHost, unhealthyHost},
 			},
 			args: args{
 				clientConn: &net.TCPConn{},
 			},
-			expectedHealthyHosts: 1,
-			wantErr:              false,
+			expectedUnhealthyHosts: 1,
+			wantErr:                false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &LoadBalancer{
-				healthyHosts: tt.fields.healthyHosts,
+				hosts: tt.fields.hosts,
 			}
 			if err := l.handleConnection(tt.args.clientConn); (err != nil) != tt.wantErr {
 				t.Errorf("LoadBalancer.handleConnection() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			l.healthyHostsLock.Lock()
-			if len(l.healthyHosts) > tt.expectedHealthyHosts {
-				t.Errorf("LoadBalancer.handleConnection() expected %d healthy hosts, got %d", tt.expectedHealthyHosts, len(l.healthyHosts))
+			newUnhealthyHost := make(chan bool)
+			observeUnhealthyHostChange(l, maxWaitTime, tt.expectedUnhealthyHosts, newUnhealthyHost)
+
+			if !<-newUnhealthyHost {
+				t.Errorf("LoadBalancer.handleConnection() expected %d unhealthy hosts, got %d", tt.expectedUnhealthyHosts, len(l.unhealthyHosts))
 			}
-			l.healthyHostsLock.Unlock()
-			// TODO: this will pass if I let it sleep, since the host is removed in a goroutine. Consider a simpler solution though before reworking this test.
-			// I still think the filtering technique may be cleaner than using the healthyHosts map.
 		})
 	}
+}
+
+// observeUnhealthyHostChange is a helper function that watches the unhealthy hosts and returns true when lengthDelta is met.
+// results are written to the input channel.
+func observeUnhealthyHostChange(l *LoadBalancer, timeout time.Duration, lengthDelta int, c chan bool) {
+	startingTime := time.Now()
+	l.unhealthyHostsLock.Lock()
+	startingCount := len(l.unhealthyHosts)
+	l.unhealthyHostsLock.Unlock()
+
+	go func() {
+		for {
+			l.unhealthyHostsLock.Lock()
+			if len(l.unhealthyHosts) == startingCount+lengthDelta {
+				c <- true
+			}
+			l.unhealthyHostsLock.Unlock()
+			if time.Since(startingTime) > timeout {
+				c <- false
+			}
+		}
+	}()
 }

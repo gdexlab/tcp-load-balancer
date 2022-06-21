@@ -61,19 +61,17 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 				// If the host is unhealthy, remove it so that leastConnections doesn't select this host again until it's healthy.
 				l.MarkHostUnhealthy(host.ID())
 
-				// TODO: Decrement the existing connection count here.
-				if err = host.DecrementActiveConnections(); err != nil {
-					log.Print(err)
-				}
-
 				// Start over to select a new host.
 				err = l.handleConnection(clientConn)
 				if err != nil {
 					log.Printf("error when ra-attempting failed host: %s", err)
 				}
 			}
-			// TODO: error handling is not ideal here.
-			log.Print(err)
+
+			if err = host.DecrementActiveConnections(); err != nil {
+				log.Print(err)
+			}
+
 			return
 		}
 
