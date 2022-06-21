@@ -4,25 +4,21 @@ import (
 	"errors"
 
 	"tcp-load-balancer/internal/upstream"
+
+	"github.com/google/uuid"
 )
 
 var ErrNoHosts = errors.New("no healthy upstream hosts available")
 
 // LeastConnections returns an authorized host with the fewest open connections.
 func (l *LoadBalancer) LeastConnections() (*upstream.TcpHost, error) {
-	if l == nil || len(l.hosts) == 0 {
-		return nil, ErrNoHosts
-	}
-
-	l.unhealthyHostsLock.Lock()
-	defer l.unhealthyHostsLock.Unlock()
 
 	var host *upstream.TcpHost
 	for _, h := range l.hosts {
 		// TODO: handle authorization scheme here in next PR. For now, we'll just assume the client can access all hosts.
 
-		// Ensure the host is healthy.
-		if _, unhealthy := l.unhealthyHosts[h.ID()]; unhealthy {
+		// If the host's health status is untraceable, or it is unhealthy, skip it.
+		if h.ID() == uuid.Nil || l.unhealthyHosts.IsUnhealthy(h.ID()) {
 			continue
 		}
 
@@ -34,6 +30,7 @@ func (l *LoadBalancer) LeastConnections() (*upstream.TcpHost, error) {
 
 	}
 
+	// If the host doesn't have an id, it's health cannot tracked and therefore it cannot be used.
 	if host == nil {
 		return nil, ErrNoHosts
 	}

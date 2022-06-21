@@ -15,7 +15,11 @@ const maxWaitTime = time.Second * 5
 func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 	t.Run("connection count is incremented and decremented during connection", func(t *testing.T) {
 
-		host := &upstream.TcpHost{}
+		host, err := upstream.New(":0", "tcp", 1)
+		if err != nil {
+			t.Error(err)
+		}
+
 		l := &LoadBalancer{
 			hosts: []*upstream.TcpHost{host},
 		}
@@ -153,17 +157,13 @@ func observeConnectionChange(host *upstream.TcpHost, timeout time.Duration, expe
 // results are written to the input channel.
 func observeUnhealthyHostChange(l *LoadBalancer, timeout time.Duration, lengthDelta int, c chan bool) {
 	startingTime := time.Now()
-	l.unhealthyHostsLock.Lock()
-	startingCount := len(l.unhealthyHosts)
-	l.unhealthyHostsLock.Unlock()
+	startingCount := l.unhealthyHosts.Length()
 
 	go func() {
 		for {
-			l.unhealthyHostsLock.Lock()
-			if len(l.unhealthyHosts) == startingCount+lengthDelta {
+			if l.unhealthyHosts.Length() == startingCount+lengthDelta {
 				c <- true
 			}
-			l.unhealthyHostsLock.Unlock()
 			if time.Since(startingTime) > timeout {
 				c <- false
 			}
