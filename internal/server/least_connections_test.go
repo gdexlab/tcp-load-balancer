@@ -37,7 +37,27 @@ func TestLoadBalancer_LeastConnections(t *testing.T) {
 			wantHostAtIndex: 1,
 		},
 		{
+			name: "first host in slice is selected when all connection counts are equal",
+			l: func() *LoadBalancer {
+				h0 := &upstream.TcpHost{}
+				h0.IncrementActiveConnections()
+
+				h1 := &upstream.TcpHost{}
+				h1.IncrementActiveConnections()
+
+				h2 := &upstream.TcpHost{}
+				h2.IncrementActiveConnections()
+
+				return &LoadBalancer{
+					hosts: []*upstream.TcpHost{h0, h1, h2},
+				}
+			}(),
+			wantErr:         false,
+			wantHostAtIndex: 0,
+		},
+		{
 			name:    "no hosts returns an error (and does not panic)",
+			l:       &LoadBalancer{},
 			wantErr: true,
 		},
 	}

@@ -5,14 +5,14 @@ import (
 	"io"
 	"log"
 	"net"
-	"tcp-load-balancer/internal/upstream"
 )
 
 var ErrUninitialized = errors.New("load balancer not initialized")
+var ConnectionNotEstablished = errors.New("net.Conn cannot be nil")
 
 // Run handles incoming connections until terminated.
 func (l *LoadBalancer) Run() error {
-	if l == nil || l.listener == nil {
+	if l.listener == nil {
 		return ErrUninitialized
 	}
 
@@ -24,14 +24,14 @@ func (l *LoadBalancer) Run() error {
 			return err
 		}
 
-		if err := l.handleConnection(clientConn); err != nil {
+		if err := l.HandleConnection(clientConn); err != nil {
 			log.Printf("Unable to handle connection: %s", err)
 		}
 	}
 }
 
 // handleConnection selects an upstream host, tracks connection counts, and forwards data upstream.
-func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
+func (l *LoadBalancer) HandleConnection(clientConn net.Conn) error {
 	// Host selection is not included in goroutine handling so that requests arriving at the same time are not routed to the same host.
 	// This adds a small amount of latency to the request, but ensures accurate load balancing.
 	host, err := l.LeastConnections()
@@ -45,14 +45,22 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 
 	// Copy data to the selected host, and decrement the connection count when the copy finishes.
 	go func() {
-		if err = forwardToHost(clientConn, host); err != nil {
+
+		hostConn, err := host.Dial()
+		if err != nil {
+			// TODO: Select a different host if this host is down (next PR).
+			log.Printf("Error dialing host: %s", err)
+			closeConnection(clientConn)
+			return
+		}
+
+		if err = ForwardData(clientConn, hostConn); err != nil {
 			// TODO: Select a different host if this host is down, and communicate the error over a channel rather than just logging it here (next PR).
-			log.Print(err)
+			log.Printf("Error forwarding data: %s", err)
 		}
 
 		closeConnection(clientConn)
-
-		// TODO: Support response data from hosts back to clients (outside scope of this project).
+		closeConnection(hostConn)
 
 		// Decrement the connection count for the selected host.
 		host.DecrementActiveConnections()
@@ -61,21 +69,26 @@ func (l *LoadBalancer) handleConnection(clientConn net.Conn) error {
 	return nil
 }
 
-// forwardToHost copies data from the client to the host.
-func forwardToHost(clientConn net.Conn, host *upstream.TcpHost) error {
-	hostConn, err := host.Dial()
-	if err != nil {
-		return err
+// ForwardData copies data from the client to the host, and also from the host to the client.
+func ForwardData(clientConn net.Conn, hostConn net.Conn) error {
+	if clientConn == nil || hostConn == nil {
+		return ConnectionNotEstablished
 	}
-	defer hostConn.Close()
+
+	hostErr := make(chan error, 1)
+
+	go func() {
+		// Copy response from host to client. It will continue running until hostConn is closed.
+		_, err := io.Copy(clientConn, hostConn)
+		hostErr <- err
+	}()
 
 	// Copy data to host (dst) from client (src). This will stay open until clientConn is closed.
-	// Currently allowing the client to decide when to terminate the connection.
-	if _, err = io.Copy(hostConn, clientConn); err != nil {
+	if _, err := io.Copy(hostConn, clientConn); err != nil {
 		return err
 	}
 
-	return nil
+	return <-hostErr
 }
 
 // closeConnection closes the connection and logs the error, if any.

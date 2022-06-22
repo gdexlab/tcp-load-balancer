@@ -2,7 +2,8 @@ package test
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // This package is used entirely for demonstration purposes (to statically configure hosts/clients).
-// It can be removed in the future, once the LB has real hosts and clients to work with.
+// In the future, it should be modified so that it can be used as an example (and moved to /examples)
+// for other clients to use this library. Leaving that out of scope for this challenge.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 import (
@@ -30,7 +31,10 @@ func Setup(l *server.LoadBalancer, numberOfHosts int, numberOfClients int, clien
 // RegisterUpstreamHosts adds n static hosts to the load balancer for testing and demonstration purposes.
 func RegisterUpstreamHosts(l *server.LoadBalancer, n int) error {
 	for i := 0; i < n; i++ {
-		h := InitializeHost(l.Address().Network(), config.SelectOpenPort)
+		h, err := InitializeHost(l.Address().Network(), config.SelectOpenPort)
+		if err != nil {
+			return err
+		}
 		u, err := upstream.New(h.Addr().String(), l.Address().Network())
 		if err != nil {
 			return err

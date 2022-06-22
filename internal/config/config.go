@@ -19,7 +19,7 @@ const (
 	// numberOfHosts controls the number of static clients added to the load balancer during setup.
 	NumberOfClients = 7
 	// clientMessageInterval controls how often messages are sent from the client to the load balancer.
-	ClientMessageInterval = time.Second * 3
+	ClientMessageInterval = time.Second * 4
 	// ------ End Static Host/Client Config ------
 )
 

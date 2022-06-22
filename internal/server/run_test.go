@@ -1,20 +1,132 @@
-package server
+package server_test
+
+// Using separate _test package to avoid circular dependency with import of "tcp-load-balancer/test" package.
 
 import (
-	"io"
 	"net"
-	"tcp-load-balancer/internal/upstream"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"tcp-load-balancer/internal/server"
+	"tcp-load-balancer/internal/upstream"
+	"tcp-load-balancer/test"
+
+	"github.com/google/uuid"
 )
+
+func Test_ForwardData(t *testing.T) {
+	uniquePayload := uuid.New().String()
+	tests := []struct {
+		name                 string
+		hostConn             net.Conn
+		clientConnectionPipe func() (net.Conn, net.Conn)
+		payload              string
+		wantErr              bool
+	}{
+		{
+			name: "Data is forwarded to host, and response includes original payload",
+			hostConn: func() net.Conn {
+				h, err := test.InitializeHost("tcp", ":0")
+				if err != nil {
+					t.Error(err)
+				}
+
+				// Connect LB to Host.
+				hostConn, err := net.Dial("tcp", h.Addr().String())
+				if err != nil {
+					t.Error(err)
+				}
+
+				return hostConn
+			}(),
+			clientConnectionPipe: net.Pipe,
+			payload:              uniquePayload,
+			wantErr:              false,
+		},
+		{
+			name: "disconnected client connection results in error",
+			clientConnectionPipe: func() (net.Conn, net.Conn) {
+				cc, cs := net.Pipe()
+				cc.Close()
+				return cc, cs
+			},
+			wantErr: true,
+		},
+		{
+			name:                 "Nil host results in error",
+			clientConnectionPipe: net.Pipe,
+			wantErr:              true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Need control over both the client side and server side of the client connection.
+			clientConnToLB, lbConnToClient := tt.clientConnectionPipe()
+
+			g := sync.WaitGroup{}
+			g.Add(1)
+			go func() {
+				if err := server.ForwardData(lbConnToClient, tt.hostConn); (err != nil) != tt.wantErr {
+					t.Errorf("forwardData() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				g.Done()
+			}()
+
+			if tt.wantErr {
+				// If we're expecting an error, return here before reading and writing.
+				g.Wait()
+				return
+			}
+
+			response := writeAndReadResponse(t, clientConnToLB, tt.payload)
+
+			if !strings.Contains(response, tt.payload) {
+				t.Errorf("Actual response did not contain original payload: %s does not contain %s", response, tt.payload)
+			}
+
+			// Don't end till all async functions have finished.
+			g.Wait()
+		})
+	}
+}
+
+// connectionIsClosed is a helper function that checks if a connection has been closed.
+func connectionIsClosed(conn net.Conn) bool {
+	if conn == nil {
+		return true
+	}
+
+	_, err := conn.Write([]byte("should fail"))
+
+	// Would like to rely on exact error here, but the error is not exported, so if Write returns an error, we'll treat that as a closed connection.
+	// Broken pipe (not exported) or io.EOF are the error cases we usually see when connection is closed.
+	// `write tcp [::1]:4333->[::1]:50403: write: broken pipe`
+	return err != nil
+}
 
 func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 	t.Run("connection count is incremented and decremented during connection", func(t *testing.T) {
 
-		host := &upstream.TcpHost{}
-		l := &LoadBalancer{
-			hosts: []*upstream.TcpHost{host},
+		h, err := test.InitializeHost("tcp", ":0")
+		if err != nil {
+			t.Error(err)
 		}
+
+		host, err := upstream.New(h.Addr().String(), "tcp")
+		if err != nil {
+			t.Error(err)
+		}
+
+		l, err := server.New("tcp", ":0")
+		if err != nil {
+			t.Error(err)
+		}
+
+		l.AddUpstream(host)
+
+		clientConn, clientServerConn := net.Pipe()
 
 		// Set up channels to watch for the connection counts to change.
 		incremented := make(chan bool)
@@ -23,10 +135,11 @@ func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 		// Start watching the connection count, and allow some time to observe the expected change.
 		expectConnectionChange(host, time.Second*5, 1, incremented)
 
-		if err := l.handleConnection(&net.TCPConn{}); err != nil {
-			t.Errorf("LoadBalancer.handleConnection() error = %v", err)
+		if err := l.HandleConnection(clientServerConn); err != nil {
+			t.Errorf("LoadBalancer.HandleConnection() error = %v", err)
 		}
 
+		_ = writeAndReadResponse(t, clientConn, "test")
 		if !<-incremented {
 			t.Error("The host never had its connection count incremented.")
 		} else {
@@ -35,6 +148,10 @@ func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 			if !<-decremented {
 				t.Error("The host never had its connection count decremented.")
 			}
+		}
+
+		if !connectionIsClosed(clientServerConn) {
+			t.Error("The connection was not properly closed.")
 		}
 	})
 }
@@ -58,47 +175,22 @@ func expectConnectionChange(host *upstream.TcpHost, timeout time.Duration, expec
 	}()
 }
 
-func TestLoadBalancer_handleConnection_Resources(t *testing.T) {
+// writeAndReadResponse is a helper to simulate client activities of writing to a connection and returning the response.
+func writeAndReadResponse(t *testing.T, conn net.Conn, payload string) string {
 
-	tests := []struct {
-		name       string
-		clientConn net.Conn
-		hosts      []*upstream.TcpHost
-		wantErr    bool
-	}{
-		{
-			name:    "connection is closed when LeastConnections returns an error",
-			wantErr: true,
-		},
-		{
-			name:    "connection is closed after forwarding to host",
-			hosts:   []*upstream.TcpHost{{}},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := &LoadBalancer{
-				hosts: tt.hosts,
-			}
-			if err := l.handleConnection(tt.clientConn); (err != nil) != tt.wantErr {
-				t.Errorf("LoadBalancer.handleConnection() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !connectionIsClosed(tt.clientConn) {
-				t.Error("The connection was not properly closed.")
-			}
-		})
-	}
-}
-
-// connectionIsClosed is a helper function that checks if a connection has been properly closed.
-func connectionIsClosed(conn net.Conn) bool {
-	if conn == nil {
-		return true
+	// Write data from client.
+	_, err := conn.Write([]byte(payload))
+	if err != nil {
+		t.Error(err)
 	}
 
-	data := make([]byte, 1)
-	_, err := conn.Read(data)
+	// Receive response on client.
+	response := make([]byte, 1024)
+	n, err := conn.Read(response)
+	if err != nil {
+		t.Error(err)
+	}
+	conn.Close()
 
-	return err == io.EOF
+	return string(response[:n])
 }

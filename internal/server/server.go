@@ -22,7 +22,11 @@ func (l *LoadBalancer) Hosts() []*upstream.TcpHost {
 }
 
 // Address returns the address of the load balancer.
+// If the listener is nil, a blank address is returned.
 func (l *LoadBalancer) Address() net.Addr {
+	if l.listener == nil {
+		return &net.TCPAddr{}
+	}
 	return l.listener.Addr()
 }
 
@@ -50,6 +54,5 @@ func New(tcpNetwork, address string) (*LoadBalancer, error) {
 
 	return &LoadBalancer{
 		listener: ln,
-		hosts:    []*upstream.TcpHost{},
 	}, nil
 }

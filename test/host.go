@@ -1,16 +1,16 @@
 package test
 
 import (
-	"io"
+	"fmt"
 	"log"
 	"net"
 )
 
-// InitializeHost is a temporary helper to simulate an upstream host that will print off any incoming data.
-func InitializeHost(tcpNetwork, address string) net.Listener {
+// InitializeHost is a temporary helper to simulate an upstream host that respond to acknowledge the data it received.
+func InitializeHost(tcpNetwork, address string) (net.Listener, error) {
 	h, err := net.Listen(tcpNetwork, address)
 	if err != nil {
-		log.Fatalf("unable to listen on %s: %s", address, err)
+		return nil, err
 	}
 
 	log.Printf("Statically defined host listening on %s", h.Addr())
@@ -26,23 +26,26 @@ func InitializeHost(tcpNetwork, address string) net.Listener {
 				// Intentionally allowing the hosts to continue to accept connections for now. This behavior will be refined in the next PR when we set up static hosts to fail occasionally.
 				continue
 			}
-
-			// Continue reading from the established connection until the client closes the connection (resulting in EOF).
-			for {
+			go func() {
+				// Continue reading from the established connection until the client closes the connection (resulting in EOF).
 				// TODO: Outside scope of this project, implement strategy for larger messages.
 				data := make([]byte, 2048)
 				n, err := conn.Read(data)
 				if err != nil {
-					if err == io.EOF {
-						break
-					}
 					log.Printf("error reading data: %s", err)
 				}
 
-				log.Printf("Host at %s received data: %s", h.Addr(), data[:n])
-			}
+				// TODO: ensure input data is sanitized.
+				_, err = conn.Write([]byte(fmt.Sprintf("Data '%s' was received by host at %s", data[:n], h.Addr())))
+				if err != nil {
+					log.Printf("error writing response: %s", err)
+				}
+
+				// Respond once to client, and then shut down the connection.
+				conn.Close()
+			}()
 		}
 	}()
 
-	return h
+	return h, nil
 }
