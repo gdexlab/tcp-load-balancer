@@ -55,6 +55,34 @@ func Test_ForwardData(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "host closed early on remote end of connection does not keep client waiting forever",
+			clientConnectionPipe: func() (net.Conn, net.Conn) {
+				cc, cs := net.Pipe()
+				cc.Close()
+				return cc, cs
+			},
+			hostConn: func() net.Conn {
+				remoteListener, err := test.InitializeHost("tcp", ":0")
+				if err != nil {
+					t.Error(err)
+				}
+
+				// Connect LB to Host.
+				hostConn, err := net.Dial("tcp", remoteListener.Addr().String())
+				if err != nil {
+					t.Error(err)
+				}
+
+				// Intentionally terminating remote end of host connection early.
+				err = remoteListener.Close()
+				if err != nil {
+					t.Error(err)
+				}
+				return hostConn
+			}(),
+			wantErr: true,
+		},
+		{
 			name:                 "Nil host results in error",
 			clientConnectionPipe: net.Pipe,
 			wantErr:              true,
@@ -68,7 +96,7 @@ func Test_ForwardData(t *testing.T) {
 			g := sync.WaitGroup{}
 			g.Add(1)
 			go func() {
-				if err := server.ForwardData(lbConnToClient, tt.hostConn); (err != nil) != tt.wantErr {
+				if err := server.ForwardData(lbConnToClient, tt.hostConn, time.Second*1); (err != nil) != tt.wantErr {
 					t.Errorf("forwardData() error = %v, wantErr %v", err, tt.wantErr)
 				}
 				g.Done()
@@ -119,7 +147,7 @@ func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 			t.Error(err)
 		}
 
-		l, err := server.New("tcp", ":0")
+		l, err := server.New("tcp", ":0", time.Second*1)
 		if err != nil {
 			t.Error(err)
 		}

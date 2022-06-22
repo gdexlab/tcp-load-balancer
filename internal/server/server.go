@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"tcp-load-balancer/internal/upstream"
 )
@@ -14,6 +15,9 @@ type LoadBalancer struct {
 
 	// hosts is the list of upstream hosts
 	hosts []*upstream.TcpHost
+
+	// hostTimeout controls how long the LB will wait for a response from the host prior to timing out.
+	hostTimeout time.Duration
 }
 
 // Hosts returns the list of hosts that are being load balanced.
@@ -39,7 +43,7 @@ func (l *LoadBalancer) AddUpstream(host *upstream.TcpHost) {
 
 // New initializes a new LoadBalancer and begins listening for connections.
 // Pass :0" as the address to have the load balancer listen on a random port.
-func New(tcpNetwork, address string) (*LoadBalancer, error) {
+func New(tcpNetwork, address string, hostTimeout time.Duration) (*LoadBalancer, error) {
 	a, err := net.ResolveTCPAddr(tcpNetwork, address)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve TCP address: %s", err)
@@ -54,5 +58,6 @@ func New(tcpNetwork, address string) (*LoadBalancer, error) {
 
 	return &LoadBalancer{
 		listener: ln,
+		hostTimeout: hostTimeout,
 	}, nil
 }

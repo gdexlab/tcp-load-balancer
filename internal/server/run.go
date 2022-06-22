@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 var ErrUninitialized = errors.New("load balancer not initialized")
@@ -54,7 +55,7 @@ func (l *LoadBalancer) HandleConnection(clientConn net.Conn) error {
 			return
 		}
 
-		if err = ForwardData(clientConn, hostConn); err != nil {
+		if err = ForwardData(clientConn, hostConn, l.hostTimeout); err != nil {
 			// TODO: Select a different host if this host is down, and communicate the error over a channel rather than just logging it here (next PR).
 			log.Printf("Error forwarding data: %s", err)
 		}
@@ -70,7 +71,8 @@ func (l *LoadBalancer) HandleConnection(clientConn net.Conn) error {
 }
 
 // ForwardData copies data from the client to the host, and also from the host to the client.
-func ForwardData(clientConn net.Conn, hostConn net.Conn) error {
+// It does not enforce a timeout on the client, but will timeout if the host is non-responsive.
+func ForwardData(clientConn net.Conn, hostConn net.Conn, hostTimeout time.Duration) error {
 	if clientConn == nil || hostConn == nil {
 		return ConnectionNotEstablished
 	}
@@ -79,6 +81,7 @@ func ForwardData(clientConn net.Conn, hostConn net.Conn) error {
 
 	go func() {
 		// Copy response from host to client. It will continue running until hostConn is closed.
+		hostConn.SetReadDeadline(time.Now().Add(hostTimeout))
 		_, err := io.Copy(clientConn, hostConn)
 		hostErr <- err
 	}()

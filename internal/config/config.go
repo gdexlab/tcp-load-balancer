@@ -9,6 +9,8 @@ import (
 const (
 	// selectOpenPort will pick an available random port for TCP connections.
 	SelectOpenPort = ":0"
+	// UpstreamHostTimeout gives the upstream hosts an alloted time to respond before returning an error.
+	UpstreamHostTimeout = time.Second * 2
 	// tcpNetwork could eventually be one of "tcp", "tcp4", "tcp6", but this project currently only supports "tcp".
 	TCPNetwork = "tcp"
 

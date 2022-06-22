@@ -10,7 +10,7 @@ import (
 
 func main() {
 	// Initialize the load balancer.
-	lb, err := server.New(config.TCPNetwork, config.GetPort())
+	lb, err := server.New(config.TCPNetwork, config.GetPort(), config.UpstreamHostTimeout)
 	if err != nil {
 		log.Fatalf("unable to start tcp load balancer: %s", err)
 	}
