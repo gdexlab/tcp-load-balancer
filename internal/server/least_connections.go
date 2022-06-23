@@ -8,6 +8,8 @@ import (
 
 // LeastConnections returns an authorized host with the fewest open connections.
 func (l *LoadBalancer) LeastConnections() (*upstream.TcpHost, error) {
+	l.hostMu.RLock()
+	defer l.hostMu.RUnlock()
 	if len(l.hosts) == 0 {
 		return nil, errors.New("no upstream hosts available")
 	}

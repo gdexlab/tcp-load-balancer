@@ -70,8 +70,8 @@ func TestLoadBalancer_LeastConnections(t *testing.T) {
 				return
 			}
 
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.l.hosts[tt.wantHostAtIndex]) {
-				t.Errorf("LoadBalancer.LeastConnections() = %v, want %v", got, tt.l.hosts[tt.wantHostAtIndex])
+			if !tt.wantErr && !reflect.DeepEqual(got, tt.l.Hosts()[tt.wantHostAtIndex]) {
+				t.Errorf("LoadBalancer.LeastConnections() = %v, want %v", got, tt.l.Hosts()[tt.wantHostAtIndex])
 			}
 		})
 	}

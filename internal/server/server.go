@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"tcp-load-balancer/internal/upstream"
@@ -16,12 +17,17 @@ type LoadBalancer struct {
 	// hosts is the list of upstream hosts
 	hosts []*upstream.TcpHost
 
+	// hostMu protects the hosts list from concurrent access.
+	hostMu sync.RWMutex
+
 	// hostTimeout controls how long the LB will wait for a response from the host prior to timing out.
 	hostTimeout time.Duration
 }
 
 // Hosts returns the list of hosts that are being load balanced.
 func (l *LoadBalancer) Hosts() []*upstream.TcpHost {
+	l.hostMu.RLock()
+	defer l.hostMu.RUnlock()
 	return l.hosts
 }
 
@@ -37,7 +43,9 @@ func (l *LoadBalancer) Address() net.Addr {
 // AddUpstream adds a new upstream host to the load balancer.
 func (l *LoadBalancer) AddUpstream(host *upstream.TcpHost) {
 	if host != nil {
+		l.hostMu.Lock()
 		l.hosts = append(l.hosts, host)
+		l.hostMu.Unlock()
 	}
 }
 
@@ -57,7 +65,7 @@ func New(tcpNetwork, address string, hostTimeout time.Duration) (*LoadBalancer, 
 	// TODO: Load TLS config as part of New LB setup in the PR that handles mTLS requirement.
 
 	return &LoadBalancer{
-		listener: ln,
+		listener:    ln,
 		hostTimeout: hostTimeout,
 	}, nil
 }

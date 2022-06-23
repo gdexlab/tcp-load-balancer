@@ -30,13 +30,13 @@ func Test_ForwardData(t *testing.T) {
 			hostConn: func() net.Conn {
 				h, err := test.InitializeHost("tcp", ":0")
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 
 				// Connect LB to Host.
 				hostConn, err := net.Dial("tcp", h.Addr().String())
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 
 				return hostConn
@@ -64,19 +64,19 @@ func Test_ForwardData(t *testing.T) {
 			hostConn: func() net.Conn {
 				remoteListener, err := test.InitializeHost("tcp", ":0")
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 
 				// Connect LB to Host.
 				hostConn, err := net.Dial("tcp", remoteListener.Addr().String())
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 
 				// Intentionally terminating remote end of host connection early.
 				err = remoteListener.Close()
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 				return hostConn
 			}(),
@@ -139,17 +139,17 @@ func TestLoadBalancer_handleConnection_Counter(t *testing.T) {
 
 		h, err := test.InitializeHost("tcp", ":0")
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		host, err := upstream.New(h.Addr().String(), "tcp")
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		l, err := server.New("tcp", ":0", time.Second*1)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		l.AddUpstream(host)

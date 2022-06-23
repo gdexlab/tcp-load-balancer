@@ -16,6 +16,7 @@ func InitializeHelloClients(address string, clientMessageInterval time.Duration,
 	for i := 0; i < numberOfClients; i++ {
 		go func() {
 			ticker := time.NewTicker(clientMessageInterval)
+			defer ticker.Stop()
 			for range ticker.C {
 
 				// TODO: In future PR, use DialTLS to connect securely to the LB.
