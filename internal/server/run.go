@@ -71,27 +71,34 @@ func (l *LoadBalancer) HandleConnection(clientConn net.Conn) error {
 }
 
 // ForwardData copies data from the client to the host, and also from the host to the client.
-// It does not enforce a timeout on the client, but will timeout if the host is non-responsive.
+// It will return an error if data cannot be copied, or the host closes prior to the client disconnecting.
 func ForwardData(clientConn net.Conn, hostConn net.Conn, hostTimeout time.Duration) error {
 	if clientConn == nil || hostConn == nil {
 		return ConnectionNotEstablished
 	}
 
-	hostErr := make(chan error, 1)
+	// result is used to do one of the following:
+	// 1. return any error from the client to host copy command
+	// 2. return nil when the client is closed before the host
+	// 3. return an error from the host to client copy if it either closes or errors BEFORE the client disconnects.
+	result := make(chan error, 1)
 
 	go func() {
-		// Copy response from host to client. It will continue running until hostConn is closed.
-		hostConn.SetReadDeadline(time.Now().Add(hostTimeout))
-		_, err := io.Copy(clientConn, hostConn)
-		hostErr <- err
+		// Copy response from host to client. It will continue running until hostConn is closed or an error is received.
+		if _, err := io.Copy(clientConn, hostConn); err != nil {
+			result <- err
+			return
+		}
+		result <- errors.New("host closed prior to client disconnection")
+	}()
+	go func() {
+		// Copy data to host (dst) from client (src). This will stay open until clientConn is closed.
+		_, err := io.Copy(hostConn, clientConn)
+		// Push the err (which is usually nil) onto the result channel to signal that this function can finish.
+		result <- err
 	}()
 
-	// Copy data to host (dst) from client (src). This will stay open until clientConn is closed.
-	if _, err := io.Copy(hostConn, clientConn); err != nil {
-		return err
-	}
-
-	return <-hostErr
+	return <-result
 }
 
 // closeConnection closes the connection and logs the error, if any.

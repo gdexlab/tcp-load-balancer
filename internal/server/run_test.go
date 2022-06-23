@@ -5,7 +5,6 @@ package server_test
 import (
 	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -55,31 +54,18 @@ func Test_ForwardData(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "host closed early on remote end of connection does not keep client waiting forever",
+			name: "host closed early results in immediate error",
 			clientConnectionPipe: func() (net.Conn, net.Conn) {
 				cc, cs := net.Pipe()
-				cc.Close()
 				return cc, cs
 			},
 			hostConn: func() net.Conn {
-				remoteListener, err := test.InitializeHost("tcp", ":0")
-				if err != nil {
-					t.Fatal(err)
-				}
+				hostConn, remoteHostConn := net.Pipe()
+				remoteHostConn.Close()
 
-				// Connect LB to Host.
-				hostConn, err := net.Dial("tcp", remoteListener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				// Intentionally terminating remote end of host connection early.
-				err = remoteListener.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
 				return hostConn
 			}(),
+			payload: uniquePayload,
 			wantErr: true,
 		},
 		{
@@ -93,29 +79,26 @@ func Test_ForwardData(t *testing.T) {
 			// Need control over both the client side and server side of the client connection.
 			clientConnToLB, lbConnToClient := tt.clientConnectionPipe()
 
-			g := sync.WaitGroup{}
-			g.Add(1)
+			response := make(chan string, 1)
 			go func() {
-				if err := server.ForwardData(lbConnToClient, tt.hostConn, time.Second*1); (err != nil) != tt.wantErr {
-					t.Errorf("forwardData() error = %v, wantErr %v", err, tt.wantErr)
+				if !connectionIsClosed(clientConnToLB) {
+					response <- writeAndReadResponse(t, clientConnToLB, tt.payload)
 				}
-				g.Done()
 			}()
 
+			if err := server.ForwardData(lbConnToClient, tt.hostConn, time.Second*1); (err != nil) != tt.wantErr {
+				t.Errorf("forwardData() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
 			if tt.wantErr {
-				// If we're expecting an error, return here before reading and writing.
-				g.Wait()
+				// Don't wait for response if we are expecting an error.
 				return
 			}
 
-			response := writeAndReadResponse(t, clientConnToLB, tt.payload)
-
-			if !strings.Contains(response, tt.payload) {
-				t.Errorf("Actual response did not contain original payload: %s does not contain %s", response, tt.payload)
+			result := <-response
+			if !strings.Contains(result, tt.payload) {
+				t.Errorf("Actual response did not contain original payload: %s does not contain %s", result, tt.payload)
 			}
-
-			// Don't end till all async functions have finished.
-			g.Wait()
 		})
 	}
 }
