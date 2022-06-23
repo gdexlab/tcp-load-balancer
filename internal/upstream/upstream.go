@@ -45,7 +45,7 @@ func (h *TcpHost) Address() *net.TCPAddr {
 
 // ConnectionCount returns the number of active connections to this host.
 func (h *TcpHost) ConnectionCount() uint64 {
-	return h.activeConnections
+	return atomic.LoadUint64(&h.activeConnections)
 }
 
 // Dial returns a net connection to the tcp host.
