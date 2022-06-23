@@ -30,7 +30,7 @@ func Test_ForwardData(t *testing.T) {
 			hostConn: func() net.Conn {
 				h, err := test.InitializeHost("tcp", ":0")
 				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 
 				// Connect LB to Host.
