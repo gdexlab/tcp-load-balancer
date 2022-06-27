@@ -1,6 +1,6 @@
 ---
 authors: Grant Dexter (gdexlab), Tim Ross (rosstimothy), Marek Smoliński (smallinsky), Tim Buckley (timothyb89)
-state: in progress
+state: approved
 ---
 # RFD 1 - Design for TCP Load Balancer
 
@@ -14,7 +14,7 @@ The goal is to write as little code as possible, while still satisfying requirem
 
 ## Requirements
 
-The following diagram offers an simplified overview of the required steps taken by the load balancer, upstream hosts, and downstream clients. It provides a quick view of the process from when a client initiates connection to when the data is passed to the upstream host. Each "swimlane" at the top of the diagram indicates which entity performs the action. See the following sections beneath the diagram for more details on each step.
+The following diagram offers a simplified overview of the required steps taken by the load balancer, upstream hosts, and downstream clients. It provides a quick view of the process from when a client initiates connection to when the data is passed to the upstream host. Each "swimlane" at the top of the diagram indicates which entity performs the action. See the following sections beneath the diagram for more details on each step.
 
 <img src="tcp_load_balancer.png" alt="tcp load balancer diagram" width="600"/>
 
@@ -58,16 +58,16 @@ For this project, a test client will be created and provided with a valid client
 Additionally, the requirement of over-the-wire encryption is not mentioned, so even though the authentication requires certs and keys, the data sent after authentication may or may not be encrypted depending on what is most convenient at the point of implementation.
 
 ### Rate Limiter
-This load balancer will implement a per-client connection rate limiter that tracks the number of client connections, and limits to n (configurable) active connections per client. It could track client identity based on attributes like IP address, and device identifier, but since this load balancer requires authentication (mTLS), we will identify unique clients based on a V5 UUID generated from the client's TLS certificate. This can be done leveraging the `crypto/tls` library, which makes peer certificates available on the `tls.Conn` struct returned from `tls.Client`. These can be turned into a consistent V5 uuid, to be used for `ClientID`, by creating a hash from the certificate, as shown below.
+This load balancer will implement a per-client connection rate limiter that tracks the number of client connections, and limits to n (configurable) active connections per client. It could track client identity based on attributes like IP address, and device identifier, but since this load balancer requires authentication (mTLS), we will identify unique clients based on a V5 UUID generated from the client's FQDN. This can be done leveraging the `crypto/tls` library, which makes peer certificate information available on the `tls.Conn` struct returned from `tls.Client`. These can be turned into a consistent V5 uuid, to be used for `ClientID`, by creating a hash from the FQDN, as shown below.
 
 ```
 // pseudo code -- requires changes during implementation, but demonstrates proof of concept.
 
 conn, err := l.listener.Accept()
 tlsConn := tls.Client(conn, tls.Config)
-cert := tlsConn.ConnectionState().PeerCertificates[0]
+fqdn := tlsConn.ConnectionState().PeerCertificate.FQDN
 
-clientID := uuid.NewV5(uuid.NamespaceOID, cert)
+clientID := uuid.NewV5(uuid.NamespaceOID, fqdn)
 ```
 
 Client connection counts can be stored in a `sync.Map` structure for quick modification, and safety across concurrent goroutines. Regarding this map choice, the [`sync` package documentation](https://pkg.go.dev/sync#Map) states the following: 
